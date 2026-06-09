@@ -1,0 +1,41 @@
+﻿@page "/bill-of-material"
+@rendermode InteractiveServer
+@using System.Diagnostics
+@using System.Timers;
+
+<PageTitle>Bill of Material</PageTitle>
+
+<h1>Bill of Material</h1>
+
+<button class="btn btn-primary" @onclick="OnClick">@_buttonText</button>
+<input type="text" class="form-control" @oninput="OnInput" />
+
+@code {
+    private string _buttonText = "Click me";
+    private string _currentInput = string.Empty;
+    private static readonly TimeSpan _debounceTime = TimeSpan.FromMilliseconds(500);
+    private readonly Timer _debounceTimer = new Timer(_debounceTime);
+
+    protected override void OnInitialized()
+    {
+        _debounceTimer.Elapsed += (_, _) =>
+        {
+            Debug.WriteLine($"debounced with value: {_currentInput}");
+            _debounceTimer.Stop();
+        };
+    }
+
+    private void OnInput(ChangeEventArgs changeEventArgs)
+    {
+        if (!_debounceTimer.Enabled)
+        {
+            _debounceTimer.Start();
+        }
+        _currentInput = changeEventArgs.Value as string ?? string.Empty;
+    }
+
+    private void OnClick()
+    {
+        _buttonText = "I've been clicked";
+    }
+}
