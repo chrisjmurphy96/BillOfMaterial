@@ -86,6 +86,11 @@
     That could expose credentials, or maybe allow some hijinks to happen directly in the browser console.
     Not sure how that all works with WASM, but that's what the JS dev in me says.
     Instead I'd want API's that take some form of authentication such as a Cookie or JWT token.
+
+    Takes inspiration from https://blog.jeremylikness.com/blog/an-easier-blazor-debounce/,
+    though I ultimately disagreed with their conclusions. Seemed like they misunderstood how
+    timed debounces work in modern frameworks, with the most recent value being emitted only at
+    the end of the debounce timer.
 *@
 @code {
     private string _currentInput = string.Empty;
