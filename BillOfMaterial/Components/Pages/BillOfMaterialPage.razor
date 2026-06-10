@@ -1,7 +1,6 @@
 ﻿@page "/bill-of-material"
 @rendermode InteractiveServer
 @attribute [StreamRendering]
-@using System.Diagnostics
 @using System.Timers;
 @using BillOfMaterial.Models;
 @using Microsoft.Data.Sqlite;
@@ -18,21 +17,21 @@
 <form @onsubmit="SubmitRow" name="add-bom-level">
     <div class="form-group">
         <label for="part-number">Part number:</label>
-        <input name="part-number" type="text" class="form-control" @bind-value="Model!.PartNumber" />
+        <input name="part-number" type="text" class="form-control" @bind-value="FormModel!.PartNumber" />
         <label for="quantity">Quantity:</label>
-        <input name="quantity" type="number" step="any" class="form-control" @bind-value="Model!.Quantity" />
+        <input name="quantity" type="number" step="any" class="form-control" @bind-value="FormModel!.Quantity" />
         <label for="unit">Unit:</label>
-        <input name="unit" type="text" class="form-control" @bind-value="Model!.Unit" />
+        <input name="unit" type="text" class="form-control" @bind-value="FormModel!.Unit" />
         <label for="total-cost">Total cost:</label>
-        <input name="total-cost" type="number" step="0.01" class="form-control" @bind-value="Model!.TotalCost" />
+        <input name="total-cost" type="number" step="0.01" class="form-control" @bind-value="FormModel!.TotalCost" />
         <label for="vendor">Vendor:</label>
-        <input name="vendor" type="text" class="form-control" @bind-value="Model!.Vendor" />
+        <input name="vendor" type="text" class="form-control" @bind-value="FormModel!.Vendor" />
         <label for="type">Type:</label>
-        <input name="type" type="text" class="form-control" @bind-value="Model!.Type" />
+        <input name="type" type="text" class="form-control" @bind-value="FormModel!.Type" />
         <label for="cost">Cost:</label>
-        <input name="cost" type="number" step="0.01" class="form-control" @bind-value="Model!.Cost" />
+        <input name="cost" type="number" step="0.01" class="form-control" @bind-value="FormModel!.Cost" />
         <label for="quantity-on-hand">Quantity on hand:</label>
-        <input name="quantity-on-hand" type="number" step="any" class="form-control" @bind-value="Model!.QuantityOnHand" />
+        <input name="quantity-on-hand" type="number" step="any" class="form-control" @bind-value="FormModel!.QuantityOnHand" />
         @* 
             TODO: nesting rows. Is it messy if we just expand recursively when building this?
             Do we pick a reference from a list?
@@ -47,25 +46,64 @@
         <input name="bom-search" type="text" class="form-control" @oninput="OnInput" placeholder="e.g. 'Table'" />
     </div>
 </form>
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th scope="col">ID</th>
+            <th scope="col">Part number</th>
+            <th scope="col">Quantity</th>
+            <th scope="col">Unit</th>
+            <th scope="col">Total cost</th>
+            <th scope="col">Vendor</th>
+            <th scope="col">Type</th>
+            <th scope="col">Cost</th>
+            <th scope="col">Quantity on hand</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (BoMLevel level in _boMLevels)
+        {
+            <tr>
+                <th scope="row">@level.PrimaryKey</th>
+                <td>@level.PartNumber</td>
+                <td>@level.Quantity</td>
+                <td>@level.Unit</td>
+                <td>@level.TotalCost</td>
+                <td>@level.Vendor</td>
+                <td>@level.Type</td>
+                <td>@level.Cost</td>
+                <td>@level.QuantityOnHand</td>
+            </tr>
+        }
+    </tbody>
+</table>
 
 @code {
     private string _buttonText = "Click me";
     private string _currentInput = string.Empty;
     private static readonly TimeSpan _debounceTime = TimeSpan.FromMilliseconds(500);
     private readonly Timer _debounceTimer = new Timer(_debounceTime);
-    private readonly List<BoMLevel> boMLevels = [];
+    private readonly PeriodicTimer _periodicTimer = new PeriodicTimer(_debounceTime);
+    private readonly List<BoMLevel> _boMLevels = [];
 
     [SupplyParameterFromForm]
-    private BoMLevel? Model { get; set; }
+    private BoMLevel? FormModel { get; set; }
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        _debounceTimer.Elapsed += (_, _) =>
+        _debounceTimer.Elapsed += async (_, _) =>
         {
-            Debug.WriteLine($"debounced with value: {_currentInput}");
+            // This is a little awkward since we're firing off an async task in a synchronous context.
+            // We could store the task and check status if that's an issue.
             _debounceTimer.Stop();
+            await InvokeAsync(async () =>
+            {
+                await Fetch(_currentInput);
+                StateHasChanged();
+            });
         };
-        Model = new();
+        FormModel = new();
+        await Fetch(string.Empty);
     }
 
     private SqliteConnection GetConnection() => new("Data Source=bill-of-material.db");
@@ -80,16 +118,17 @@
             INSERT INTO BoMLevel (PartNumber, Quantity, Unit, TotalCost, Vendor, Type, Cost, QuantityOnHand)
             VALUES (@partNumber, @quantity, @unit, @totalCost, @vendor, @type, @cost, @quantityOnHand)
             """;
-        command.Parameters.AddWithValue("@partNumber", Model?.PartNumber);
-        command.Parameters.AddWithValue("@quantity", Model?.Quantity);
-        command.Parameters.AddWithValue("@unit", Model?.Unit);
-        command.Parameters.AddWithValue("@totalCost", Model?.TotalCost);
-        command.Parameters.AddWithValue("@vendor", Model?.Vendor);
-        command.Parameters.AddWithValue("@type", Model?.Type);
-        command.Parameters.AddWithValue("@cost", Model?.Cost);
-        command.Parameters.AddWithValue("@quantityOnHand", Model?.QuantityOnHand);
+        command.Parameters.AddWithValue("@partNumber", FormModel?.PartNumber);
+        command.Parameters.AddWithValue("@quantity", FormModel?.Quantity);
+        command.Parameters.AddWithValue("@unit", FormModel?.Unit);
+        command.Parameters.AddWithValue("@totalCost", FormModel?.TotalCost);
+        command.Parameters.AddWithValue("@vendor", FormModel?.Vendor);
+        command.Parameters.AddWithValue("@type", FormModel?.Type);
+        command.Parameters.AddWithValue("@cost", FormModel?.Cost);
+        command.Parameters.AddWithValue("@quantityOnHand", FormModel?.QuantityOnHand);
         await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
+        await Fetch(_currentInput);
     }
 
     private void OnInput(ChangeEventArgs changeEventArgs)
@@ -103,17 +142,27 @@
 
     private async Task Fetch(string search)
     {
+        _boMLevels.Clear();
         using SqliteConnection connection = GetConnection();
         await connection.OpenAsync();
         using SqliteCommand sqliteCommand = connection.CreateCommand();
         sqliteCommand.CommandText = """
             SELECT * FROM BoMLevel
-            WHERE ReferenceKey = NULL
+            WHERE ReferenceKey IS NULL
             """;
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            sqliteCommand.CommandText = $"""
+            SELECT * FROM BoMLevel
+            WHERE ReferenceKey IS NULL
+            AND (PrimaryKey LIKE @search OR PartNumber LIKE @search)
+            """;
+            sqliteCommand.Parameters.AddWithValue("@search", $"%{search}%");
+        }
         using SqliteDataReader dataReader = await sqliteCommand.ExecuteReaderAsync();
         while (await dataReader.ReadAsync())
         {
-            boMLevels.Add(await GetLevel(connection, dataReader));
+            _boMLevels.Add(await GetLevel(connection, dataReader));
         }
     }
 
@@ -147,7 +196,8 @@
         boMLevel.Type = dataReader.GetString(6);
         boMLevel.Cost = dataReader.GetFloat(7);
         boMLevel.QuantityOnHand = dataReader.GetFloat(8);
-        boMLevel.ReferenceKey = dataReader.GetInt32(9);
+        if (!await dataReader.IsDBNullAsync(9))
+            boMLevel.ReferenceKey = dataReader.GetInt32(9);
         if (boMLevel.ReferenceKey is not null)
         {
             boMLevel.InnerLevel = await GetInnerLevel(connection, boMLevel.ReferenceKey.Value);
