@@ -1,0 +1,157 @@
+﻿@page "/bill-of-material"
+@rendermode InteractiveServer
+@attribute [StreamRendering]
+@using System.Diagnostics
+@using System.Timers;
+@using BillOfMaterial.Models;
+@using Microsoft.Data.Sqlite;
+
+<PageTitle>Bill of Material</PageTitle>
+
+<h1>Bill of Material</h1>
+
+<!--
+    Turns out making a modal is faily involved for Blazor, so for now I am just putting the form above the table view
+    https://amarozka.dev/blazor-custom-modal-component/
+-->
+<h2>Add row:</h2>
+<form @onsubmit="SubmitRow" name="add-bom-level">
+    <div class="form-group">
+        <label for="part-number">Part number:</label>
+        <input name="part-number" type="text" class="form-control" @bind-value="Model!.PartNumber" />
+        <label for="quantity">Quantity:</label>
+        <input name="quantity" type="number" step="any" class="form-control" @bind-value="Model!.Quantity" />
+        <label for="unit">Unit:</label>
+        <input name="unit" type="text" class="form-control" @bind-value="Model!.Unit" />
+        <label for="total-cost">Total cost:</label>
+        <input name="total-cost" type="number" step="0.01" class="form-control" @bind-value="Model!.TotalCost" />
+        <label for="vendor">Vendor:</label>
+        <input name="vendor" type="text" class="form-control" @bind-value="Model!.Vendor" />
+        <label for="type">Type:</label>
+        <input name="type" type="text" class="form-control" @bind-value="Model!.Type" />
+        <label for="cost">Cost:</label>
+        <input name="cost" type="number" step="0.01" class="form-control" @bind-value="Model!.Cost" />
+        <label for="quantity-on-hand">Quantity on hand:</label>
+        <input name="quantity-on-hand" type="number" step="any" class="form-control" @bind-value="Model!.QuantityOnHand" />
+        @* 
+            TODO: nesting rows. Is it messy if we just expand recursively when building this?
+            Do we pick a reference from a list?
+        *@
+    </div>
+    <button class="btn btn-primary" type="submit">Submit</button>
+</form>
+
+<form>
+    <div class="form-group">
+        <label for="bom-search">Search:</label>
+        <input name="bom-search" type="text" class="form-control" @oninput="OnInput" placeholder="e.g. 'Table'" />
+    </div>
+</form>
+
+@code {
+    private string _buttonText = "Click me";
+    private string _currentInput = string.Empty;
+    private static readonly TimeSpan _debounceTime = TimeSpan.FromMilliseconds(500);
+    private readonly Timer _debounceTimer = new Timer(_debounceTime);
+    private readonly List<BoMLevel> boMLevels = [];
+
+    [SupplyParameterFromForm]
+    private BoMLevel? Model { get; set; }
+
+    protected override void OnInitialized()
+    {
+        _debounceTimer.Elapsed += (_, _) =>
+        {
+            Debug.WriteLine($"debounced with value: {_currentInput}");
+            _debounceTimer.Stop();
+        };
+        Model = new();
+    }
+
+    private SqliteConnection GetConnection() => new("Data Source=bill-of-material.db");
+
+    private async Task SubmitRow()
+    {
+        using SqliteConnection connection = GetConnection();
+        await connection.OpenAsync();
+        using SqliteTransaction transaction = connection.BeginTransaction();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO BoMLevel (PartNumber, Quantity, Unit, TotalCost, Vendor, Type, Cost, QuantityOnHand)
+            VALUES (@partNumber, @quantity, @unit, @totalCost, @vendor, @type, @cost, @quantityOnHand)
+            """;
+        command.Parameters.AddWithValue("@partNumber", Model?.PartNumber);
+        command.Parameters.AddWithValue("@quantity", Model?.Quantity);
+        command.Parameters.AddWithValue("@unit", Model?.Unit);
+        command.Parameters.AddWithValue("@totalCost", Model?.TotalCost);
+        command.Parameters.AddWithValue("@vendor", Model?.Vendor);
+        command.Parameters.AddWithValue("@type", Model?.Type);
+        command.Parameters.AddWithValue("@cost", Model?.Cost);
+        command.Parameters.AddWithValue("@quantityOnHand", Model?.QuantityOnHand);
+        await command.ExecuteNonQueryAsync();
+        await transaction.CommitAsync();
+    }
+
+    private void OnInput(ChangeEventArgs changeEventArgs)
+    {
+        if (!_debounceTimer.Enabled)
+        {
+            _debounceTimer.Start();
+        }
+        _currentInput = changeEventArgs.Value as string ?? string.Empty;
+    }
+
+    private async Task Fetch(string search)
+    {
+        using SqliteConnection connection = GetConnection();
+        await connection.OpenAsync();
+        using SqliteCommand sqliteCommand = connection.CreateCommand();
+        sqliteCommand.CommandText = """
+            SELECT * FROM BoMLevel
+            WHERE ReferenceKey = NULL
+            """;
+        using SqliteDataReader dataReader = await sqliteCommand.ExecuteReaderAsync();
+        while (await dataReader.ReadAsync())
+        {
+            boMLevels.Add(await GetLevel(connection, dataReader));
+        }
+    }
+
+    private async Task<BoMLevel> GetInnerLevel(SqliteConnection connection, int referenceKey)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT * FROM BoMLevel
+            WHERE PrimaryKey = @referenceKey
+            LIMIT 1
+            """;
+        command.Parameters.AddWithValue("@referenceKey", referenceKey);
+        using SqliteDataReader dataReader = await command.ExecuteReaderAsync();
+        if (await dataReader.ReadAsync())
+        {
+            return await GetLevel(connection, dataReader);
+        }
+        // Choosing to not have this throw for now
+        return new();
+    }
+
+    private async Task<BoMLevel> GetLevel(SqliteConnection connection, SqliteDataReader dataReader)
+    {
+        BoMLevel boMLevel = new();
+        boMLevel.PrimaryKey = dataReader.GetInt32(0);
+        boMLevel.PartNumber = dataReader.GetString(1);
+        boMLevel.Quantity = dataReader.GetFloat(2);
+        boMLevel.Unit = dataReader.GetString(3);
+        boMLevel.TotalCost = dataReader.GetFloat(4);
+        boMLevel.Vendor = dataReader.GetString(5);
+        boMLevel.Type = dataReader.GetString(6);
+        boMLevel.Cost = dataReader.GetFloat(7);
+        boMLevel.QuantityOnHand = dataReader.GetFloat(8);
+        boMLevel.ReferenceKey = dataReader.GetInt32(9);
+        if (boMLevel.ReferenceKey is not null)
+        {
+            boMLevel.InnerLevel = await GetInnerLevel(connection, boMLevel.ReferenceKey.Value);
+        }
+        return boMLevel;
+    }
+}

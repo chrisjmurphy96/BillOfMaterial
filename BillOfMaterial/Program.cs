@@ -1,4 +1,7 @@
+using BillOfMaterial;
 using BillOfMaterial.Components;
+
+DatabaseInitializer.Initialize();
 
 var builder = WebApplication.CreateBuilder(args);
 
