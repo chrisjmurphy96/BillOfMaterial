@@ -10,7 +10,7 @@
 <h1>Bill of Material</h1>
 
 <!--
-    Turns out making a modal is faily involved for Blazor, so for now I am just putting the form above the table view
+    Turns out making a modal is fairly involved for Blazor, so for now I am just putting the form above the table view
     https://amarozka.dev/blazor-custom-modal-component/
 -->
 <h2>Add row:</h2>
@@ -43,7 +43,7 @@
 <form>
     <div class="form-group">
         <label for="bom-search">Search:</label>
-        <input name="bom-search" type="text" class="form-control" @oninput="OnInput" placeholder="e.g. 'Table'" />
+        <input name="bom-search" type="text" class="form-control" @oninput="OnInput" placeholder="@SEARCH_PLACEHOLDER" />
     </div>
 </form>
 <table class="table table-bordered">
@@ -81,13 +81,19 @@
     </tbody>
 </table>
 
+@*
+    In a real world scenario I probably wouldn't want to open a DB connection directly in the browser.
+    That could expose credentials, or maybe allow some hijinks to happen directly in the browser console.
+    Not sure how that all works with WASM, but that's what the JS dev in me says.
+    Instead I'd want API's that take some form of authentication such as a Cookie or JWT token.
+*@
 @code {
-    private string _buttonText = "Click me";
     private string _currentInput = string.Empty;
     private static readonly TimeSpan _debounceTime = TimeSpan.FromMilliseconds(500);
     private readonly Timer _debounceTimer = new Timer(_debounceTime);
     private readonly PeriodicTimer _periodicTimer = new PeriodicTimer(_debounceTime);
     private readonly List<BoMLevel> _boMLevels = [];
+    private const string SEARCH_PLACEHOLDER = "Search by 'ID' or 'Part number'";
 
     [SupplyParameterFromForm]
     private BoMLevel? FormModel { get; set; }
@@ -162,6 +168,10 @@
         _currentInput = changeEventArgs.Value as string ?? string.Empty;
     }
 
+    /// <summary>
+    /// If I want to add paging to this, I can just use the PrimaryKey as a page marker to retrieve a
+    /// set amount from. e.g., I could retrieve the next set of 25 from PrimaryKey = 37
+    /// </summary>
     private async Task Fetch(string search)
     {
         _boMLevels.Clear();
