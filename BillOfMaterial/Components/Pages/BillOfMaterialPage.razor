@@ -73,6 +73,9 @@
                 <td>@level.Type</td>
                 <td>@level.Cost</td>
                 <td>@level.QuantityOnHand</td>
+                <td>
+                    <button class="btn btn-danger" @onclick="async () => await DeleteRow(level.PrimaryKey)">X</button>
+                </td>
             </tr>
         }
     </tbody>
@@ -126,6 +129,25 @@
         command.Parameters.AddWithValue("@type", FormModel?.Type);
         command.Parameters.AddWithValue("@cost", FormModel?.Cost);
         command.Parameters.AddWithValue("@quantityOnHand", FormModel?.QuantityOnHand);
+        await command.ExecuteNonQueryAsync();
+        await transaction.CommitAsync();
+        await Fetch(_currentInput);
+    }
+
+    /// <summary>
+    /// In a real world scenario soft delete might be preferred, but this seems pretty harmless for the PoC.
+    /// </summary>
+    private async Task DeleteRow(int primaryKey)
+    {
+        using SqliteConnection connection = GetConnection();
+        await connection.OpenAsync();
+        using SqliteTransaction transaction = connection.BeginTransaction();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM BoMLevel
+            WHERE PrimaryKey = @primaryKey
+            """;
+        command.Parameters.AddWithValue("@primaryKey", primaryKey);
         await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
         await Fetch(_currentInput);
